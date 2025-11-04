@@ -1,3 +1,4 @@
+import asyncio
 import logging
 
 import fastembed
@@ -26,8 +27,10 @@ class FastEmbedder(BaseEmbedder):
         )
 
     def embed(self, text: str | list[str], model_name: str | None = None):
+        # fastembed.embed() returns an iterable; convert to list to materialize all embeddings
+        embeddings = list(self.embedder.embed(text))
+
         if isinstance(text, list):
-            embeddings = [next(iter(self.embedder.embed(t))) for t in text]
             return [
                 SparseEmbedding(
                     name=self.embedding_name,
@@ -37,28 +40,14 @@ class FastEmbedder(BaseEmbedder):
                 for embedding in embeddings
             ]
         else:
-            embedding = next(iter(self.embedder.embed(text)))
+            # Single text input returns single embedding
+            embedding = embeddings[0]
             return SparseEmbedding(
                 name=self.embedding_name,
                 values=embedding.values.tolist(),
                 indices=embedding.indices.tolist(),
             )
 
-    def a_embed(self, text: str | list[str], model_name: str | None = None):
-        if isinstance(text, list):
-            embeddings = [next(iter(self.embedder.embed(t))) for t in text]
-            return [
-                SparseEmbedding(
-                    name=self.embedding_name,
-                    values=embedding.values.tolist(),
-                    indices=embedding.indices.tolist(),
-                )
-                for embedding in embeddings
-            ]
-        else:
-            embedding = next(iter(self.embedder.embed(text)))
-            return SparseEmbedding(
-                name=self.embedding_name,
-                values=embedding.values.tolist(),
-                indices=embedding.indices.tolist(),
-            )
+    async def a_embed(self, text: str | list[str], model_name: str | None = None):
+        # run the sync embed() in a thread to avoid blocking the event loop
+        return await asyncio.to_thread(self.embed, text, model_name)
